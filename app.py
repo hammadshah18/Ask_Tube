@@ -1,7 +1,7 @@
 import streamlit as st
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 import google.generativeai as genai
-import whisper
+from faster_whisper import WhisperModel
 import tempfile
 import yt_dlp
 from sentence_transformers import SentenceTransformer
@@ -378,7 +378,7 @@ div[data-testid="stSpinner"] { color: var(--accent) !important; }
 # --------------------------
 @st.cache_resource(show_spinner=False)
 def load_whisper():
-    return whisper.load_model("tiny")
+    return WhisperModel("tiny", device="cpu", compute_type="int8")
 
 @st.cache_resource(show_spinner=False)
 def load_embedder():
@@ -409,32 +409,69 @@ def whisper_transcribe_video(video_url):
         temp_dir = tempfile.gettempdir()
         audio_template = os.path.join(temp_dir, "yt_audio")
         audio_path = audio_template + ".mp3"
-        ydl_opts = {
-            "format": "bestaudio/best",
+        # Try multiple strategies to bypass YouTube bot detection
+        base_opts = {
             "outtmpl": audio_template,
             "noplaylist": True,
             "quiet": True,
-            "continuedl": False,
             "nopart": True,
-            "retries": 10,
-            "fragment_retries": 10,
+            "retries": 3,
             "socket_timeout": 30,
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
-                "preferredquality": "192",
+                "preferredquality": "128",
             }],
         }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url])
-        if not os.path.exists(audio_path):
-            raise Exception("Audio file was not downloaded")
+
+        strategies = [
+            # Strategy 1: Android client (most reliable, bypasses bot check)
+            {**base_opts, "format": "bestaudio/best",
+             "extractor_args": {"youtube": {"player_client": ["android"]}}},
+            # Strategy 2: iOS client
+            {**base_opts, "format": "bestaudio/best",
+             "extractor_args": {"youtube": {"player_client": ["ios"]}}},
+            # Strategy 3: mweb client
+            {**base_opts, "format": "bestaudio/best",
+             "extractor_args": {"youtube": {"player_client": ["mweb"]}}},
+            # Strategy 4: Any available audio/video format
+            {**base_opts, "format": "worstaudio/worst",
+             "extractor_args": {"youtube": {"player_client": ["android"]}}},
+        ]
+
+        downloaded = False
+        last_error = None
+        for i, opts in enumerate(strategies):
+            try:
+                # Clean up any partial file from previous attempt
+                for ext in ["mp3", "mp4", "webm", "m4a", "part"]:
+                    p = audio_template + "." + ext
+                    if os.path.exists(p):
+                        os.remove(p)
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    ydl.download([video_url])
+                # Check for any audio file (extension may vary before FFmpeg)
+                for ext in ["mp3", "mp4", "webm", "m4a"]:
+                    candidate = audio_template + "." + ext
+                    if os.path.exists(candidate):
+                        if candidate != audio_path:
+                            os.rename(candidate, audio_path)
+                        downloaded = True
+                        break
+                if downloaded:
+                    break
+            except Exception as e:
+                last_error = e
+                continue
+
+        if not downloaded or not os.path.exists(audio_path):
+            raise Exception(f"All download strategies failed. Last error: {last_error}")
         whisper_model = load_whisper()
-        result = whisper_model.transcribe(audio_path)
+        segments, _ = whisper_model.transcribe(audio_path, beam_size=1)
         transcript_text = ""
-        for segment in result["segments"]:
-            start = segment["start"]
-            text = segment["text"]
+        for segment in segments:
+            start = segment.start
+            text = segment.text
             transcript_text += f"[{start:.2f}s] {text} "
         os.remove(audio_path)
         return transcript_text
@@ -444,15 +481,16 @@ def whisper_transcribe_video(video_url):
 
 def get_transcript(video_id, video_url=None):
     try:
-        api = YouTubeTranscriptApi()
-        transcript_list = api.fetch(video_id)
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
         text = ""
         for chunk in transcript_list:
-            start = getattr(chunk, "start", 0)
-            content = getattr(chunk, "text", "")
+            start = chunk.get("start", 0)
+            content = chunk.get("text", "")
             text += f"[{start:.2f}s] {content} "
         return text, "YouTube Captions"
     except (TranscriptsDisabled, NoTranscriptFound):
+        pass
+    except Exception:
         pass
     if video_url:
         result = whisper_transcribe_video(video_url)
