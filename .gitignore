@@ -1,0 +1,102 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Streamlit
+.streamlit/
+*.streamlit.server.runOnSave
+streamlit/
+.streamlit_cache/
+/.streamlit
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# ML Models and data
+*.pth
+*.pt
+*.ckpt
+models/
+.cache/
+~/.cache/
+
+# FAISS indices and vectors
+*.faiss
+*.pkl
+*.pickle
+
+# Audio/Video files
+*.mp3
+*.mp4
+*.wav
+*.webm
+*.m4a
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+.cache/
+
+# System files
+Thumbs.db
+.DS_Store
+*.log
+logs/
+
+# Unit tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre
+.pyre/
